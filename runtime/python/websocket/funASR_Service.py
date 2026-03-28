@@ -18,24 +18,34 @@ from openai import OpenAI
 from funasr import AutoModel
 
 app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False  # 兼容旧版 Flask (< 2.2)
+app.json.ensure_ascii = False        # 兼容新版 Flask (>= 2.2)
 
 # 配置上传文件夹
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-auto_model = AutoModel(model="damo/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-                  vad_model="damo/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-                  punc_model="damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
-                  spk_model="damo/speech_campplus_sv_zh-cn_16k-common",
-                    device="cuda:0" if torch.cuda.is_available() else "cpu"
-                       )
+# ASR_MODEL = os.environ.get("ASR_MODEL", "/workspace/models/FunASR/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch")
+ASR_MODEL = os.environ.get("ASR_MODEL", "/workspace/models/FunASR/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch")
+VAD_MODEL = os.environ.get("VAD_MODEL", "/workspace/models/FunASR/speech_fsmn_vad_zh-cn-16k-common-pytorch")
+PUNC_MODEL = os.environ.get("PUNC_MODEL", "/workspace/models/FunASR/punc_ct-transformer_zh-cn-common-vocab272727-pytorch")
+SPK_MODEL = os.environ.get("SPK_MODEL", "/workspace/models/FunASR/speech_campplus_sv_zh-cn_16k-common")
+
+auto_model = AutoModel(
+                    model=ASR_MODEL,
+                    vad_model=VAD_MODEL,
+                    punc_model=PUNC_MODEL,
+                    spk_model=SPK_MODEL,
+                    device="cuda:0" if torch.cuda.is_available() else "cpu",
+                    disable_update=True,
+                )
 # 声纹对比
 sv_pipeline = pipeline(
-                task='speaker-verification',
-                model='damo/speech_campplus_sv_zh-cn_16k-common',
-                model_revision='v1.0.0',
-                device="cuda:0" if torch.cuda.is_available() else "cpu"
+                    task='speaker-verification',
+                    model=SPK_MODEL,
+                    model_revision='v1.0.0',
+                    device="cuda:0" if torch.cuda.is_available() else "cpu"
                 )
 
 
@@ -85,7 +95,8 @@ def Register_Speaker():
         return jsonify({"error": str(e)}), 500
 
 # 会议撰写
-@app.route('/AsrCamWithIdentify', methods=['POST'])
+# @app.route('/AsrCamWithIdentify', methods=['POST'])
+@app.route('/v1/chat/completions', methods=['POST'])
 def speech_recognition_Timestamp_cam_identify_speakers():
     # 检查文件上传
     if 'file' not in request.files:
@@ -108,6 +119,12 @@ def speech_recognition_Timestamp_cam_identify_speakers():
     speaker_db_str = request.form.get('speaker_db', '{}')
     speaker_db = json.loads(speaker_db_str)
 
+    # 读取hotword
+    hotword_data = request.form.get('hotword', '')
+    hotword_data_list = hotword_data.split() 
+    hotword = " ".join(hotword_data_list)
+    # print(f"hotword: {hotword}")
+
     # 3. 验证声纹库（如果需要对比）
     if identify_speakers:
         if not isinstance(speaker_db, dict) or len(speaker_db) == 0:
@@ -119,7 +136,7 @@ def speech_recognition_Timestamp_cam_identify_speakers():
         # 执行语音识别
         result = auto_model.generate(input=filepath,
                                      batch_size_s=300,
-                                     hotword='',
+                                     hotword=hotword,
                                      )
 
         # 处理结果
@@ -275,4 +292,4 @@ def calculate_similarity():
             })
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10099, debug=True)
+    app.run(host='0.0.0.0', port=8081, debug=False)
