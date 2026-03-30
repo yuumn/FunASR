@@ -9,7 +9,7 @@ COPY . .
 RUN export https_proxy=http://10.7.4.2:3128 && \
     export http_proxy=http://10.7.4.2:3128 && \
     apt update && apt-get update && apt install -y ffmpeg && \
-    pip install gunicorn && \
+    pip install gunicorn gevent && \
     pip install flask && \
     pip install openai && \
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && \
